@@ -1,0 +1,42 @@
+# Environment & secrets
+.env
+.env.local
+
+# DuckDB
+*.duckdb
+*.duckdb.wal
+# Exception: include the DuckDB file for Evidence dashboard deployment
+!dashboard/sources/fitness/fitness.duckdb
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.eggs/
+
+# SQLMesh
+.cache/
+
+# Node / Evidence.dev
+node_modules/
+dashboard/node_modules/
+dashboard/.evidence/
+dashboard/build/
+
+# Dagster
+.dagster/
+storage/
+logs/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
