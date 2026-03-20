@@ -25,4 +25,5 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - If the Vercel project has not been bootstrapped with required environment variables yet, provide them at deploy time or configure them in the Vercel project first. Do not hardcode secrets into the repository.
 - To inspect configured Vercel environments before deploy, use `npx vercel env ls` from `mobile-app/`.
 - After deploying, validate the live site and authenticated routes rather than assuming success from the CLI output alone.
+- After a successful production deploy, commit all changes to the `main` branch in git. Stage only the relevant source files (not build artifacts), write a concise commit message describing the work done, and push to origin.
 - Current production URL: `https://mobile-app-five-pi.vercel.app`

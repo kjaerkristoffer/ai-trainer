@@ -9,7 +9,7 @@ import { MonthlyCalendar } from "@/components/monthly-calendar";
 import { DayActivityList } from "@/components/day-activity-list";
 import { WorkoutDetail } from "@/components/workout-detail";
 import { Button } from "@/components/ui/button";
-import { Activity } from "@/lib/types";
+import { Activity, getActivityConfig } from "@/lib/types";
 import { getActivities } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
@@ -55,11 +55,44 @@ function GoalCard({
   );
 }
 
+// dir > 0 = navigating forward, dir < 0 = navigating back
+const slideVariants = {
+  enter: (dir: number) => ({
+    opacity: 0,
+    y: dir > 0 ? 36 : 12,
+  }),
+  center: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      y: { type: "spring" as const, damping: 26, stiffness: 280 },
+      opacity: { duration: 0.18 },
+    },
+  },
+  exit: (dir: number) => ({
+    opacity: 0,
+    y: dir > 0 ? -12 : 40,
+    transition: { duration: 0.18, ease: "easeIn" as const },
+  }),
+};
+
+const headerVariants = {
+  enter: (dir: number) => ({ opacity: 0, y: dir > 0 ? 10 : -10 }),
+  center: { opacity: 1, y: 0, transition: { duration: 0.2 } },
+  exit: (dir: number) => ({
+    opacity: 0,
+    y: dir > 0 ? -10 : 10,
+    transition: { duration: 0.15 },
+  }),
+};
+
 export default function HomePage() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
+  const [progressionExercise, setProgressionExercise] = useState<string | null>(null);
+  const [navDirection, setNavDirection] = useState(1);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -90,13 +123,62 @@ export default function HomePage() {
     return activities.filter((a) => a.activity_date === key).length;
   }, [activities, selectedDate]);
 
+  const headerContent = useMemo(() => {
+    if (progressionExercise && selectedActivity) {
+      return {
+        kicker: "Progressive overload",
+        title: progressionExercise,
+        subtitle: selectedActivity.activity_name,
+      };
+    }
+    if (selectedActivity) {
+      const cfg = getActivityConfig(selectedActivity.activity_type);
+      return {
+        kicker: cfg.label,
+        title: selectedActivity.activity_name,
+        subtitle: format(parseISO(selectedActivity.activity_date), "EEEE, MMMM d"),
+      };
+    }
+    return {
+      kicker: "Day overview",
+      title: selectedDate ? format(selectedDate, "EEEE, MMMM d") : "",
+      subtitle: `${selectedDayActivityCount} session${selectedDayActivityCount === 1 ? "" : "s"} on this day`,
+    };
+  }, [progressionExercise, selectedActivity, selectedDate, selectedDayActivityCount]);
+
+  const headerKey = progressionExercise ?? selectedActivity?.source_id ?? "day";
+
   function handleSelectDate(date: Date) {
     setSelectedDate(date);
     setSelectedActivity(null);
+    setProgressionExercise(null);
     setIsOverlayOpen(true);
   }
 
+  function handleSelectActivity(activity: Activity) {
+    setNavDirection(1);
+    setProgressionExercise(null);
+    setSelectedActivity(activity);
+  }
+
+  function handleViewProgression(exerciseName: string) {
+    setNavDirection(1);
+    setProgressionExercise(exerciseName);
+  }
+
+  function handleBackFromProgression() {
+    setNavDirection(-1);
+    setProgressionExercise(null);
+  }
+
+  function handleBackToDay() {
+    setNavDirection(-1);
+    setProgressionExercise(null);
+    setSelectedActivity(null);
+  }
+
   function closeOverlay() {
+    setProgressionExercise(null);
     setSelectedActivity(null);
     setIsOverlayOpen(false);
   }
@@ -173,41 +255,77 @@ export default function HomePage() {
                     className="glass-overlay relative z-10 flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-[32px] border border-white/10 bg-background/72 shadow-[0_36px_120px_-48px_rgba(0,0,0,0.92)]"
                   >
                     <div className="flex items-start justify-between gap-4 border-b border-border/60 px-4 py-4 sm:px-6">
-                      <div>
-                        <p className="text-kicker">Day overview</p>
-                        <h2 className="mt-2 text-xl font-semibold sm:text-2xl">
-                          {format(selectedDate, "EEEE, MMMM d")}
-                        </h2>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {selectedDayActivityCount} session{selectedDayActivityCount === 1 ? "" : "s"} on this day
-                        </p>
+                      <div className="min-w-0 flex-1 overflow-hidden">
+                        <AnimatePresence mode="wait" custom={navDirection}>
+                          <motion.div
+                            key={headerKey}
+                            custom={navDirection}
+                            variants={headerVariants}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                          >
+                            <p className="text-kicker">{headerContent.kicker}</p>
+                            <h2 className="mt-2 text-xl font-semibold sm:text-2xl truncate">
+                              {headerContent.title}
+                            </h2>
+                            <p className="mt-1 text-sm text-muted-foreground truncate">
+                              {headerContent.subtitle}
+                            </p>
+                          </motion.div>
+                        </AnimatePresence>
                       </div>
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={closeOverlay}
-                        className="rounded-full border border-border/70 bg-background/55 backdrop-blur-sm"
-                        aria-label="Close overlay"
+                        onClick={
+                          progressionExercise ? handleBackFromProgression :
+                          selectedActivity ? handleBackToDay :
+                          closeOverlay
+                        }
+                        className="rounded-full border border-border/70 bg-background/55 backdrop-blur-sm shrink-0"
+                        aria-label={
+                          progressionExercise ? "Back to workout" :
+                          selectedActivity ? "Back to day overview" :
+                          "Close overlay"
+                        }
                       >
                         <X className="h-4 w-4" />
                       </Button>
                     </div>
 
                     <div className="overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
-                      <AnimatePresence mode="wait">
+                      <AnimatePresence mode="wait" custom={navDirection}>
                         {selectedActivity ? (
-                          <WorkoutDetail
+                          <motion.div
                             key={selectedActivity.source_id}
-                            activity={selectedActivity}
-                            onBack={() => setSelectedActivity(null)}
-                          />
+                            custom={navDirection}
+                            variants={slideVariants}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                          >
+                            <WorkoutDetail
+                              activity={selectedActivity}
+                              progressionExercise={progressionExercise}
+                              onViewProgression={handleViewProgression}
+                            />
+                          </motion.div>
                         ) : (
-                          <DayActivityList
+                          <motion.div
                             key={format(selectedDate, "yyyy-MM-dd")}
-                            date={selectedDate}
-                            activities={activities}
-                            onSelect={setSelectedActivity}
-                          />
+                            custom={navDirection}
+                            variants={slideVariants}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                          >
+                            <DayActivityList
+                              date={selectedDate}
+                              activities={activities}
+                              onSelect={handleSelectActivity}
+                            />
+                          </motion.div>
                         )}
                       </AnimatePresence>
                     </div>
