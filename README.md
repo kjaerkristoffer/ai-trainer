@@ -21,6 +21,12 @@ Orchestration: Dagster OSS (daily 06:00 schedule)
 
 ## Quick Start
 
+## Git Workflow
+
+- Primary branch: `main`
+- Recommended protection for `main`: require pull requests for changes, block force-pushes, and prevent deletion
+- The old `master` branch should be removed from the remote after GitHub's default branch is switched to `main`
+
 ### Prerequisites
 
 - Python 3.10+
