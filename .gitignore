@@ -27,6 +27,8 @@ node_modules/
 dashboard/node_modules/
 dashboard/.evidence/
 dashboard/build/
+mobile-app/.next/
+mobile-app/.vercel/
 
 # Dagster
 .dagster/
