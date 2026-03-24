@@ -13,6 +13,44 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Keep the month calendar mobile-first and minimal: date first, colored activity dots beneath, balanced spacing, and no extra text inside each day tile.
 - For strength workouts, exercise rows should expand inline directly beneath the selected exercise row and collapse back into that row when toggled.
 
+# Data Update Workflow
+
+When asked to "update data", run all of the following steps in order from the **repository root** (`c:\Projects\AI Trainer`), not from `mobile-app/`. Do not skip steps or stop early — verify each step succeeds before moving to the next.
+
+**Step 1 — Ingest raw data (Strava + Hevy)**
+```
+python run_ingestion.py
+```
+This pulls incremental Strava data (from last sync timestamp) and full Hevy data into `fitness.duckdb`.
+
+**Step 2 — Refresh SQLMesh models**
+```
+sqlmesh run
+```
+This rebuilds all staging → intermediate → mart tables from the raw data. This step is mandatory — skipping it means the mart tables stay stale even though raw data was updated.
+
+**Step 3 — Verify the data landed**
+Query the mart to confirm the expected recent dates are present:
+```python
+python -c "
+import duckdb
+con = duckdb.connect('fitness.duckdb', read_only=True)
+rows = con.sql(\"SELECT activity_date, source, activity_name FROM marts.mart_activity_log ORDER BY activity_date DESC LIMIT 10\").fetchall()
+for r in rows: print(r)
+con.close()
+"
+```
+Do not proceed to export if the most recent activities are missing. If data is missing, diagnose before continuing.
+
+**Step 4 — Export JSON files for the mobile app**
+```
+PYTHONIOENCODING=utf-8 python scripts/export_data.py
+```
+This reads from `fitness.duckdb` and writes updated JSON files to `mobile-app/public/data/`.
+
+**Step 5 — Deploy the mobile app**
+Follow the Deployment Workflow below (verify → deploy → commit → push).
+
 # Development Workflow
 
 - Always deploy changes to Vercel after completing development work. Do not leave changes undeployed.
