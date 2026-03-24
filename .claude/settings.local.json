@@ -3,7 +3,14 @@
     "allow": [
       "Bash(npx vercel:*)",
       "Bash(npm run:*)",
-      "Bash(python3 -c \":*)"
+      "Bash(python3 -c \":*)",
+      "Bash(python run_ingestion.py)",
+      "Bash(find 'c:\\\\Projects\\\\AI Trainer\\\\mobile-app/public' -name *.json)",
+      "Bash(python scripts/export_data.py)",
+      "Bash(PYTHONIOENCODING=utf-8 python scripts/export_data.py)",
+      "Bash(python -c \":*)",
+      "Bash(python -m sqlmesh run)",
+      "Bash(sqlmesh run:*)"
     ]
   }
 }
