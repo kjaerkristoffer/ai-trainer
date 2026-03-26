@@ -13,8 +13,9 @@ import {
   Timer,
   TrendingUp,
 } from "lucide-react";
+import { format, parseISO } from "date-fns";
 import { AnimatePresence, motion } from "framer-motion";
-import { Activity, WorkoutDetailRecord } from "@/lib/types";
+import { Activity, StrengthWorkoutDetail, WorkoutDetailRecord } from "@/lib/types";
 import { getWorkoutDetails } from "@/lib/data";
 import { ExerciseProgression } from "@/components/exercise-progression";
 
@@ -25,6 +26,8 @@ interface StatItem {
   unit: string;
   color: string; // hex accent color for gradient + icon
 }
+
+const REP_TARGET_HIGH = 10;
 
 const SET_TYPE_LABELS: Record<string, string> = {
   normal: "Working",
@@ -143,6 +146,226 @@ function buildStats(a: Activity): StatItem[] {
   return stats;
 }
 
+// ─── Set history bar chart ────────────────────────────────────────────────────
+
+function SetHistoryBarChart({
+  points,
+  currentDate,
+  color,
+  formatValue,
+}: {
+  points: Array<{ date: string; value: number }>;
+  currentDate: string;
+  color: string;
+  formatValue: (v: number) => string;
+}) {
+  if (points.length === 0) return null;
+
+  const maxVal = Math.max(...points.map((p) => p.value), 1);
+  const W = 300;
+  const valueAreaH = 13;
+  const chartH = 52;
+  const dateAreaH = 18;
+  const totalH = valueAreaH + chartH + dateAreaH;
+  const barGap = W / points.length;
+  const barW = Math.min(46, barGap * 0.58);
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${totalH}`}
+      className="w-full"
+      style={{ height: totalH }}
+      preserveAspectRatio="xMidYMid meet"
+    >
+      {points.map((pt, i) => {
+        const cx = i * barGap + barGap / 2;
+        const isCurrent = pt.date === currentDate;
+        const normH = Math.max(3, (pt.value / maxVal) * chartH);
+        const barY = valueAreaH + chartH - normH;
+        return (
+          <g key={pt.date + i}>
+            <rect
+              x={cx - barW / 2}
+              y={barY}
+              width={barW}
+              height={normH}
+              rx={2.5}
+              fill={isCurrent ? color : `${color}55`}
+            />
+            <text
+              x={cx}
+              y={barY - 2}
+              textAnchor="middle"
+              fontSize="8"
+              fontWeight={isCurrent ? "700" : "400"}
+              fill={isCurrent ? color : "#64748b"}
+            >
+              {formatValue(pt.value)}
+            </text>
+            <text
+              x={cx}
+              y={valueAreaH + chartH + dateAreaH - 1}
+              textAnchor="middle"
+              fontSize="7"
+              fontWeight={isCurrent ? "600" : "400"}
+              fill={isCurrent ? color : "#64748b"}
+            >
+              {format(parseISO(pt.date), "d MMM")}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+// ─── Per-set progression view ─────────────────────────────────────────────────
+
+function SetProgressionView({
+  exerciseName,
+  setIndex,
+  currentSessionDate,
+  allStrengthDetails,
+}: {
+  exerciseName: string;
+  setIndex: number;
+  currentSessionDate: string;
+  allStrengthDetails: StrengthWorkoutDetail[];
+}) {
+  const history = useMemo(() => {
+    return allStrengthDetails
+      .filter((w) => w.exercises.some((e) => e.exercise_name === exerciseName))
+      .sort((a, b) => a.activity_date.localeCompare(b.activity_date))
+      .flatMap((w) => {
+        const ex = w.exercises.find((e) => e.exercise_name === exerciseName);
+        if (!ex) return [];
+        const set = ex.sets.find((s) => s.set_index === setIndex);
+        if (!set || set.reps == null) return [];
+        return [{ date: w.activity_date, weight: set.weight_kg ?? 0, reps: set.reps }];
+      })
+      .slice(-10);
+  }, [allStrengthDetails, exerciseName, setIndex]);
+
+  if (history.length === 0) {
+    return (
+      <p className="py-2 text-[11px] text-muted-foreground">
+        No history found for Set {setIndex}.
+      </p>
+    );
+  }
+
+  const latest = history[history.length - 1];
+  const prev = history.length >= 2 ? history[history.length - 2] : null;
+  const hasWeight = history.some((h) => h.weight > 0);
+
+  // Progressive overload assessment
+  const recentReps = history.slice(-3).map((h) => h.reps);
+  const repTrend =
+    recentReps.length >= 2 ? recentReps[recentReps.length - 1] - recentReps[0] : 0;
+
+  type OverloadStatus = "ready" | "progressing" | "maintain" | "declining";
+  let overloadStatus: OverloadStatus = "maintain";
+  let recommendation = "";
+
+  if (hasWeight) {
+    if (latest.reps >= REP_TARGET_HIGH) {
+      overloadStatus = "ready";
+      recommendation = `Hit ${latest.reps} reps at ${latest.weight} kg — increase weight by 2.5 kg next session.`;
+    } else if (prev && latest.weight > prev.weight) {
+      overloadStatus = "progressing";
+      recommendation = `Good weight increase (${prev.weight} → ${latest.weight} kg)! Focus on hitting ${REP_TARGET_HIGH} reps.`;
+    } else if (repTrend > 0) {
+      overloadStatus = "progressing";
+      recommendation = `Reps trending up (+${repTrend} over last ${recentReps.length} sessions). Keep current weight.`;
+    } else if (prev && latest.reps < prev.reps - 1) {
+      overloadStatus = "declining";
+      recommendation = `Reps dropped (${prev.reps} → ${latest.reps}). Maintain ${latest.weight} kg and prioritise recovery.`;
+    } else {
+      overloadStatus = "maintain";
+      const needed = REP_TARGET_HIGH - latest.reps;
+      recommendation = `Maintain ${latest.weight} kg. Aim for ${needed} more rep${needed !== 1 ? "s" : ""} to unlock the next weight.`;
+    }
+  } else {
+    if (latest.reps >= REP_TARGET_HIGH) {
+      overloadStatus = "ready";
+      recommendation = `${latest.reps} reps — consider adding resistance or increasing difficulty next session.`;
+    } else if (repTrend > 0) {
+      overloadStatus = "progressing";
+      recommendation = `Reps improving! Keep pushing toward ${REP_TARGET_HIGH} reps.`;
+    } else {
+      const needed = REP_TARGET_HIGH - latest.reps;
+      recommendation = `Aim for ${needed} more rep${needed !== 1 ? "s" : ""} to progress.`;
+    }
+  }
+
+  const statusColor =
+    overloadStatus === "ready"
+      ? "#22c55e"
+      : overloadStatus === "progressing"
+      ? "#3b82f6"
+      : overloadStatus === "declining"
+      ? "#f43f5e"
+      : "#f97316";
+
+  const statusLabel =
+    overloadStatus === "ready"
+      ? "Ready to progress"
+      : overloadStatus === "progressing"
+      ? "On track"
+      : overloadStatus === "declining"
+      ? "Needs attention"
+      : "Maintain";
+
+  const weightPoints = history.map((h) => ({ date: h.date, value: h.weight }));
+  const repPoints = history.map((h) => ({ date: h.date, value: h.reps }));
+
+  return (
+    <div className="space-y-3 pt-1">
+      {/* Weight chart */}
+      {hasWeight && (
+        <div>
+          <p className="mb-1.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+            Weight · kg
+          </p>
+          <SetHistoryBarChart
+            points={weightPoints}
+            currentDate={currentSessionDate}
+            color="#f59e0b"
+            formatValue={(v) => (v === 0 ? "BW" : `${v}`)}
+          />
+        </div>
+      )}
+
+      {/* Reps chart */}
+      <div>
+        <p className="mb-1.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          Reps
+        </p>
+        <SetHistoryBarChart
+          points={repPoints}
+          currentDate={currentSessionDate}
+          color="#22c55e"
+          formatValue={(v) => `${v}`}
+        />
+      </div>
+
+      {/* Overload status + recommendation */}
+      <div
+        className="rounded-[14px] p-3 space-y-1"
+        style={{
+          background: `linear-gradient(135deg, ${statusColor}18 0%, ${statusColor}06 100%)`,
+          border: `1px solid ${statusColor}28`,
+        }}
+      >
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: statusColor }}>
+          {statusLabel}
+        </p>
+        <p className="text-xs leading-relaxed text-muted-foreground">{recommendation}</p>
+      </div>
+    </div>
+  );
+}
+
 export function WorkoutDetail({
   activity,
   progressionExercise,
@@ -153,13 +376,19 @@ export function WorkoutDetail({
   onViewProgression: (name: string) => void;
 }) {
   const [detail, setDetail] = useState<WorkoutDetailRecord | null | undefined>(undefined);
+  const [allStrengthDetails, setAllStrengthDetails] = useState<StrengthWorkoutDetail[]>([]);
   const [expandedExerciseIndex, setExpandedExerciseIndex] = useState<number | null>(null);
+  const [expandedSetKey, setExpandedSetKey] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
     getWorkoutDetails().then((records) => {
       if (!isMounted) return;
       setExpandedExerciseIndex(null);
+      setExpandedSetKey(null);
+      setAllStrengthDetails(
+        records.filter((r): r is StrengthWorkoutDetail => r.detail_type === "strength")
+      );
       setDetail(records.find((record) => record.source_id === activity.source_id) ?? null);
     });
     return () => {
@@ -379,31 +608,69 @@ export function WorkoutDetail({
                               </div>
 
                               <div className="space-y-1.5">
-                                {exercise.sets.map((set) => (
-                                  <div
-                                    key={set.set_index}
-                                    className="flex items-center justify-between rounded-[16px] border border-border/50 bg-background/45 px-3 py-2"
-                                  >
-                                    <div className="flex items-center gap-2.5">
-                                      <span className="w-9 text-xs font-semibold">
-                                        Set {set.set_index}
-                                      </span>
-                                      <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                                        {formatSetType(set.set_type)}
-                                      </span>
+                                {exercise.sets.map((set) => {
+                                  const setKey = `${exercise.exercise_index}-${set.set_index}`;
+                                  const isSetExpanded = expandedSetKey === setKey;
+                                  return (
+                                    <div
+                                      key={set.set_index}
+                                      className="overflow-hidden rounded-[16px] border border-border/50 bg-background/45"
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setExpandedSetKey((cur) =>
+                                            cur === setKey ? null : setKey
+                                          )
+                                        }
+                                        className="flex w-full items-center justify-between px-3 py-2 text-left"
+                                      >
+                                        <div className="flex items-center gap-2.5">
+                                          <span className="w-9 text-xs font-semibold">
+                                            Set {set.set_index}
+                                          </span>
+                                          <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                                            {formatSetType(set.set_type)}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          {set.rpe ? (
+                                            <span className="rounded-full bg-background/70 px-2 py-0.5 text-xs text-muted-foreground">
+                                              RPE {set.rpe.toFixed(1)}
+                                            </span>
+                                          ) : null}
+                                          <span className="text-sm font-semibold text-primary">
+                                            {formatSetSummary(set)}
+                                          </span>
+                                          <ChevronDown
+                                            className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${
+                                              isSetExpanded ? "rotate-180 text-primary" : ""
+                                            }`}
+                                          />
+                                        </div>
+                                      </button>
+
+                                      <AnimatePresence initial={false}>
+                                        {isSetExpanded && (
+                                          <motion.div
+                                            initial={{ height: 0, opacity: 0 }}
+                                            animate={{ height: "auto", opacity: 1 }}
+                                            exit={{ height: 0, opacity: 0 }}
+                                            transition={{ duration: 0.2, ease: "easeOut" }}
+                                            className="border-t border-border/40 px-3 pb-3"
+                                          >
+                                            <SetProgressionView
+                                              exerciseName={exercise.exercise_name}
+                                              setIndex={set.set_index}
+                                              currentSessionDate={detail.activity_date}
+                                              allStrengthDetails={allStrengthDetails}
+                                            />
+                                          </motion.div>
+                                        )}
+                                      </AnimatePresence>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                      {set.rpe ? (
-                                        <span className="rounded-full bg-background/70 px-2 py-0.5 text-xs text-muted-foreground">
-                                          RPE {set.rpe.toFixed(1)}
-                                        </span>
-                                      ) : null}
-                                      <span className="text-sm font-semibold text-primary">
-                                        {formatSetSummary(set)}
-                                      </span>
-                                    </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             </div>
                           </motion.div>
