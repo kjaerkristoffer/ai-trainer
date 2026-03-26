@@ -20,6 +20,14 @@ MODEL (
   ]
 );
 
+-- dlt re-ingests full history on each run, which can produce duplicate workout rows
+-- (same workout id, different _dlt_id). Deduplicate to one row per workout before joining.
+WITH deduped_workouts AS (
+    SELECT *
+    FROM raw.hevy_workouts
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY _dlt_id) = 1
+)
+
 SELECT
     w.id                                AS workout_id,
     w.title                             AS workout_title,
@@ -35,7 +43,7 @@ SELECT
     CAST(s.reps AS INTEGER)             AS reps,
     CAST(COALESCE(s.rpe__v_double, s.rpe) AS DOUBLE)             AS rpe,
     CAST(s.duration_seconds AS DOUBLE)  AS duration_seconds
-FROM raw.hevy_workouts AS w
+FROM deduped_workouts AS w
 JOIN raw.hevy_workouts__exercises AS e
     ON w._dlt_id = e._dlt_parent_id
 JOIN raw.hevy_workouts__exercises__sets AS s
