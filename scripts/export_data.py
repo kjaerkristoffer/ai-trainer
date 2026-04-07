@@ -28,7 +28,7 @@ def export_query(con: duckdb.DuckDBPyConnection, name: str, sql: str):
     data = [dict(zip(cols, row)) for row in rows]
     path = OUTPUT_DIR / f"{name}.json"
     path.write_text(json.dumps(data, default=serialize, indent=None), encoding="utf-8")
-    print(f"  {name}: {len(data)} rows → {path}")
+    print(f"  {name}: {len(data)} rows -> {path}")
 
 
 def export_workout_details(con: duckdb.DuckDBPyConnection):
@@ -157,7 +157,7 @@ def export_workout_details(con: duckdb.DuckDBPyConnection):
 
     path = OUTPUT_DIR / "workout_details.json"
     path.write_text(json.dumps(details, default=serialize, indent=None), encoding="utf-8")
-    print(f"  workout_details: {len(details)} rows → {path}")
+    print(f"  workout_details: {len(details)} rows -> {path}")
 
 
 def main():
