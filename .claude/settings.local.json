@@ -10,7 +10,10 @@
       "Bash(PYTHONIOENCODING=utf-8 python scripts/export_data.py)",
       "Bash(python -c \":*)",
       "Bash(python -m sqlmesh run)",
-      "Bash(sqlmesh run:*)"
+      "Bash(sqlmesh run:*)",
+      "Bash(python3:*)",
+      "Bash(sqlmesh plan:*)",
+      "Bash(python -c ':*)"
     ]
   }
 }
